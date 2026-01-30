@@ -1,0 +1,97 @@
+name: Build and Push OpenClaw
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      upstream_version: ${{ steps.check.outputs.upstream_version }}
+    steps:
+      - name: Check upstream for new release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get latest release tag from upstream
+          LATEST_RELEASE=$(gh api /repos/openclaw/openclaw/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
+
+          if [ -z "$LATEST_RELEASE" ]; then
+            echo "No releases found upstream, skipping"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "upstream_version=${LATEST_RELEASE}" >> $GITHUB_OUTPUT
+
+          # Always build on manual trigger or push
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "${{ github.event_name }}" == "push" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # For scheduled runs, check if we already built this release
+          PACKAGE_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+
+          EXISTING_TAGS=$(gh api \
+            "/users/${{ github.repository_owner }}/packages/container/${PACKAGE_NAME}/versions" \
+            --jq '.[].metadata.container.tags[]' 2>/dev/null || echo "")
+
+          if echo "$EXISTING_TAGS" | grep -qF "${LATEST_RELEASE}"; then
+            echo "Already built ${LATEST_RELEASE}, skipping"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "New release ${LATEST_RELEASE}, building"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.check-upstream.outputs.upstream_version }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
