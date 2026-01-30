@@ -26,7 +26,6 @@ WORKDIR /app
 
 # Copy built artifacts
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/ui/dist ./ui/dist
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml* ./
 COPY --from=builder /app/.version ./
