@@ -30,8 +30,8 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml* ./
 COPY --from=builder /app/.version ./
 
-# Install production dependencies only and clean cache
-RUN pnpm install --prod --frozen-lockfile || pnpm install --prod && \
+# Install production dependencies only (skip postinstall scripts) and clean cache
+RUN pnpm install --prod --ignore-scripts && \
     pnpm store prune && \
     rm -rf /root/.cache /tmp/*
 
