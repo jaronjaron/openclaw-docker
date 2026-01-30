@@ -43,4 +43,4 @@ EXPOSE 18789
 # Data directory for persistent storage
 VOLUME ["/app/data"]
 
-CMD ["node", "dist/index.js", "gateway", "--bind", "0.0.0.0"]
+CMD ["node", "dist/index.js", "gateway", "--bind", "0.0.0.0", "--allow-unconfigured"]
