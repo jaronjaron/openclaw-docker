@@ -1,5 +1,5 @@
-# Build stage
-FROM node:22-bookworm-slim AS builder
+# Single-stage build based on upstream Dockerfile
+FROM node:22-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 
@@ -15,32 +15,15 @@ RUN LATEST_TAG=$(git ls-remote --tags --sort=-v:refname https://github.com/openc
 RUN pnpm install --frozen-lockfile || pnpm install
 
 # Build in correct order per upstream docs
+ENV OPENCLAW_A2UI_SKIP_MISSING=1
+ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build && pnpm build
-
-# Production stage
-FROM node:22-bookworm-slim AS runtime
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-WORKDIR /app
-
-# Copy built artifacts
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-lock.yaml* ./
-COPY --from=builder /app/.version ./
-
-# Install production dependencies only (skip postinstall scripts) and clean cache
-RUN pnpm install --prod --ignore-scripts && \
-    pnpm store prune && \
-    rm -rf /root/.cache /tmp/*
 
 ENV NODE_ENV=production
 
-# OpenClaw gateway default port
-EXPOSE 18789
+# Run as non-root user
+USER node
 
-# Data directory for persistent storage
-VOLUME ["/app/data"]
+EXPOSE 18789
 
 CMD ["node", "dist/index.js", "gateway", "--bind", "lan", "--allow-unconfigured"]
