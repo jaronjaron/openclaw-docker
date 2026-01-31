@@ -21,6 +21,9 @@ RUN pnpm ui:build && pnpm build
 
 ENV NODE_ENV=production
 
+# Create .openclaw directory with correct permissions before switching user
+RUN mkdir -p /home/node/.openclaw && chown -R node:node /home/node
+
 # Run as non-root user
 USER node
 
